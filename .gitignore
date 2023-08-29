@@ -1,0 +1,6 @@
+# Pycharm files
+.idea/
+# venv files
+venv/
+# Mac files
+.DC_Store
