@@ -4,3 +4,7 @@
 venv/
 # Mac files
 .DC_Store
+# Log files
+*.log
+# Output files
+*.txt
