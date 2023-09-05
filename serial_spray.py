@@ -88,14 +88,14 @@ def out_chain_gen(java_data: bytes, config_obj: object) -> bytes:
     :param config_obj:  The program configuration instance.
     :return:  The final payload after being process through specified routines.
     """
-    chain_out = ''
+    chain_out = java_data
 
     # Iterate through compression/encoding list #
     for method in config_obj.out_chain:
         try:
             # Look up the current methods routine in hash table,
             # overwrite output variable per routine #
-            chain_out = config_obj.routines[method](java_data).strip()
+            chain_out = config_obj.routines[method](chain_out).strip()
 
         # If attempting to access key that does not exist #
         except KeyError:
@@ -108,7 +108,7 @@ def sys_cmd(cmd_syntax: list, input_bytes: bytes):
     """
     Executes system command as child process with input bytes piped into it.
 
-    :param cmd_syntax:  The syntax for the command to be executed.
+    :param cmd_syntax:  The syntax for the command to be executed as list.
     :param input_bytes:  The byte data to be feed into the child process via pipe.
     :return:  The command output on success, raises error to log and exit on failure.
     """
